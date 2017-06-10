@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import cPickle as pickle
 
 
 class Utility(object):
@@ -35,6 +36,11 @@ class Utility(object):
     def filter(array, f, r):
         return np.array([f(array[max(idx - r, 0):min(idx + r + 1, len(array))]) for idx, d in enumerate(array)])
 
+    @staticmethod
+    def plot(array):
+        plt.figure()
+        plt.plot(array)
+        plt.show()
 
 class Power(object):
     def __init__(self, data, id):
@@ -49,6 +55,7 @@ class Power(object):
     def __getitem__(self, name):
         if name == "is_nodata":
             value = self.ave < 5
+            value = value or np.mean(Utility.filter(self.data, np.median, 3)) < 5
         elif name == "is_close_at_end":
             value = all([v < 10 for v in self.data[-15:]])
         elif name == "is_stop_abs":
@@ -76,14 +83,16 @@ class Power(object):
     def similar(self):
         data_mf = np.array([v for v in Utility.filter(self.data, np.median, 3)])
         r = 3
-        s1 = self.norm(data_mf[123:273])
-        s2 = self.norm(data_mf[489:639])
-        return Utility.DTWDistance(s1, s2, r) < 900
+        s1 = self.norm(data_mf[-486:-366])
+        s2 = self.norm(data_mf[-120:])
+        similar_value = Utility.DTWDistance(s1, s2, r)
+        print(similar_value)
+        return similar_value < 10
 
     def norm(self, array):
         s = array - np.mean(array)
         s /= np.std(array)
-        return array
+        return s
 
 
 class Powers(object):
@@ -92,9 +101,6 @@ class Powers(object):
     """
 
     def __init__(self, file):
-        import os
-        import cPickle as pickle
-
         pfile = file.split(".")[0] + ".pkl"
         if os.path.exists(pfile):
             with open(pfile, "rb") as f:
@@ -107,7 +113,8 @@ class Powers(object):
             print self.data.shape
             with open(pfile, "wb") as f:
                 pickle.dump(self.data, f)
-        self.train = self.data[:, :609]
+        print self.data.shape
+        self.train = self.data[:, :]
         self.test = self.data[:, 609:]
 
         # split train/test
@@ -145,5 +152,23 @@ class Powers(object):
     def test_case(self, n):
         self.classify(self.powers[n])
 
+
+def group_folder(folder, powers):
+    array = [int(f.split(".")[0].split(":")[0])for f in os.listdir("./images/"+folder)]
+    p = np.array([powers[i].data for i in array])
+    return np.sum(p, 0)
+
 p = Powers("Tianchi_power_new.csv")
-p.classifyAll()
+# p.classifyAll()
+
+for f in os.listdir("./images"):
+    print f
+    _ = group_folder(f, p)
+    Utility.plot(_)
+
+# array = []
+# for f in os.listdir("./images"):
+#     dat = group_folder(f, p)
+#     array.append(dat)
+# # np.savetxt("data.csv", np.array(array))
+# np.loadtxt(open("data.csv"))
