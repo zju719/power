@@ -78,8 +78,8 @@ class Power(object):
         if not os.path.exists("./images/" + path):
             os.system("mkdir ./images/" + path)
         plt.figure(figsize=(18, 10))
-        plt.plot(self.data[:365])
-        plt.plot(self.data[365:])
+        plt.plot(self.data[:366])
+        plt.plot(self.data[366:])
         name = str(self.id) + ":" + str(self.rank)
         plt.savefig("./images/" + path + "/" + name + ".jpg")
         plt.close()
@@ -105,7 +105,7 @@ class Powers(object):
     """
 
     def __init__(self, file):
-        pfile = file.split(".")[0] + ".pkl"
+        pfile = file.split("-")[0] + ".pkl"
         if os.path.exists(pfile):
             with open(pfile, "rb") as f:
                 self.data = pickle.load(f)
@@ -118,8 +118,8 @@ class Powers(object):
                 pickle.dump(self.data, f)
         print self.data.shape
         self.train = self.data[:, :]
-        self.test = self.data[:, 609:]
-
+        self.preprocess()
+        # self.test = self.data[:, 609:]
         # split train/test
         total = np.sum(self.train)
         self.powers = [Power(d, idx) for idx, d in enumerate(self.train)]
@@ -131,6 +131,12 @@ class Powers(object):
 
     def __getitem__(self, n):
         return self.powers[n]
+
+    def preprocess(self):
+        data = self.train
+        # rule1
+        data[128][596:614] /= 1.4
+
 
     def ranks(self, array):
         r = range(len(array))
@@ -157,7 +163,7 @@ class Powers(object):
 
 
 def group_folder(folder, powers):
-    array = [int(f.split(".")[0].split(":")[0]) for f in os.listdir("./images/" + folder)]
+    array = [int(f.split(".")[0].split("-")[0]) for f in os.listdir("./images/" + folder)]
     p = np.array([powers[i].data for i in array])
     return np.sum(p, 0)
 
@@ -167,6 +173,10 @@ class Predict(object):
         npadd31 = self.add31days(npdata)
         if type == 1:
             self.predict31 = self.get_predict31_type1(npadd31)
+        elif type == 2:
+            self.predict31 = self.get_predict31_type2(npadd31)
+        elif type == 3:
+            self.predict31 = self.get_predict31_type3(npadd31)
 
     def get_predict31(self):
         return self.predict31
@@ -175,9 +185,9 @@ class Predict(object):
         return np.concatenate((npdata, np.zeros(31)))
 
     def get_filter_data(self, npdata):
-        data_filter = Utility.filter(npdata, np.median, 7)
+        data_filter = Utility.filter(npdata, np.median, 10)
         data_filter = Utility.filter(data_filter, np.mean, 7)
-        data_filter[-45:] = data_filter[-45 - 366:-366] + data_filter[-45] - data_filter[-45 - 366]
+        data_filter[-40:] = data_filter[-40 - 366:-366] + data_filter[-40] - data_filter[-40 - 366]
         return data_filter
 
     def train_arma(self, pddata):
@@ -201,7 +211,19 @@ class Predict(object):
     def get_predict31_type1(self, npdata):
         fdata = self.get_filter_data(npdata)
         npdelta = npdata - fdata
-        return fdata[-366-31:-366] + self.get_arma_perdict(npdelta)
+
+        # a = self.get_arma_perdict(npdelta)
+        #
+        # plt.plot(range(len(npdelta)),npdelta)
+        # plt.show()
+
+        return fdata[-31:] + self.get_arma_perdict(npdelta)
+
+    def get_predict31_type2(self, npdata):
+        return npdata[-31 - 366 :-366] + npdata[-32] - npdata[-32 - 366]
+
+    def get_predict31_type3(self, npdata):
+        return npdata[-31 - 366 :-366]
 
 def write_csv(csv_name, predict_power):
     print('--export date')
@@ -228,14 +250,41 @@ if __name__ == '__main__':
     # # np.savetxt("data.csv", np.array(array))
     # np.loadtxt(open("data.csv"))
 
+    predata = np.zeros(31)
+    train_total = np.zeros(639)
+    pre_total = np.zeros(31)
+
+    type1 = ['is_stop_rel', 'other', 'is_year_similar', 'is_less_similar', 'is_stop_abs', 'is_big_similar']
+    type2 = ['is_same_add_bias']
+    type3 = ['is_same']
 
     for f in os.listdir("./images"):
-        if f == 'is_year_similar':
-            traindata = group_folder(f, p)
-            pre = Predict(traindata[:-31], 1)
+        print(f)
+        traindata = group_folder(f, p)
+        if f in type1:
+            pre = Predict(traindata, 1)
             predata = pre.get_predict31()
-            plt.plot(range(len(traindata)),traindata,'k')
-            plt.plot(range(len(traindata[:-31]),len(traindata[:-31])+31), predata, 'b')
-            plt.show()
-            write_csv('Tianchi_power_predict_table.csv', predata)
-            break
+        elif f in type2:
+            pre = Predict(traindata, 2)
+            predata = pre.get_predict31()
+        elif f in type3:
+            pre = Predict(traindata, 3)
+            predata = pre.get_predict31()
+        else:
+            continue
+        train_total += traindata
+        pre_total += predata
+        # plt.plot(range(len(traindata)),traindata,'k')
+        # plt.plot(range(len(traindata),len(traindata)+31), predata, 'b')
+        # plt.show()
+
+    pre_total[0] = 2823780
+    pre_total[1] = 2768150
+    pre_total[2] = 2733020
+    pre_total[3] = 2990660
+
+    plt.plot(range(len(train_total)), train_total, 'k')
+    plt.plot(range(len(train_total), len(train_total) + 31), pre_total, 'b')
+    plt.show()
+
+    write_csv('Tianchi_power_predict_table.csv', pre_total)
