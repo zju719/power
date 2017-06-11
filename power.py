@@ -2,6 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import cPickle as pickle
+import arma as ar
+import pandas as pd
+import csv
 
 
 class Utility(object):
@@ -41,6 +44,7 @@ class Utility(object):
         plt.figure()
         plt.plot(array)
         plt.show()
+
 
 class Power(object):
     def __init__(self, data, id):
@@ -106,7 +110,6 @@ class Powers(object):
             with open(pfile, "rb") as f:
                 self.data = pickle.load(f)
         else:
-            import pandas as pd
             df = pd.read_csv(file)
             users = [df[df.user_id == user] for user in df.user_id.unique()]
             self.data = np.array([list(user.power_consumption) for user in users]).astype(np.float)
@@ -154,21 +157,85 @@ class Powers(object):
 
 
 def group_folder(folder, powers):
-    array = [int(f.split(".")[0].split(":")[0])for f in os.listdir("./images/"+folder)]
+    array = [int(f.split(".")[0].split(":")[0]) for f in os.listdir("./images/" + folder)]
     p = np.array([powers[i].data for i in array])
     return np.sum(p, 0)
 
-p = Powers("Tianchi_power_new.csv")
-# p.classifyAll()
 
-for f in os.listdir("./images"):
-    print f
-    _ = group_folder(f, p)
-    Utility.plot(_)
+class Predict(object):
+    def __init__(self, npdata, type):
+        npadd31 = self.add31days(npdata)
+        if type == 1:
+            self.predict31 = self.get_predict31_type1(npadd31)
 
-# array = []
-# for f in os.listdir("./images"):
-#     dat = group_folder(f, p)
-#     array.append(dat)
-# # np.savetxt("data.csv", np.array(array))
-# np.loadtxt(open("data.csv"))
+    def get_predict31(self):
+        return self.predict31
+
+    def add31days(self, npdata):
+        return np.concatenate((npdata, np.zeros(31)))
+
+    def get_filter_data(self, npdata):
+        data_filter = Utility.filter(npdata, np.median, 7)
+        data_filter = Utility.filter(data_filter, np.mean, 7)
+        data_filter[-45:] = data_filter[-45 - 366:-366] + data_filter[-45] - data_filter[-45 - 366]
+        return data_filter
+
+    def train_arma(self, pddata):
+        ar_model = ar.arima_model(pddata[-90 - 31:-31], maxLag=8)
+        ar_model.get_proper_model()
+        print 'bic:', ar_model.bic, 'p:', ar_model.p, 'q:', ar_model.q
+        # print ar_model.properModel.forecast()[0]
+        return ar_model
+
+    def get_arma_perdict(self, npdata):
+        pddates = pd.date_range('20150101', periods=len(npdata))
+        pddata = pd.DataFrame(npdata, index=pddates)
+        arma_model = self.train_arma(pddata)
+        # predict
+        npdata_end = len(npdata)
+        ar_delta = arma_model.properModel.predict(str(pddates[npdata_end - 31]), str(pddates[npdata_end - 1]),
+                                                  dynamic=True).values
+        return ar_delta
+
+
+    def get_predict31_type1(self, npdata):
+        fdata = self.get_filter_data(npdata)
+        npdelta = npdata - fdata
+        return fdata[-366-31:-366] + self.get_arma_perdict(npdelta)
+
+def write_csv(csv_name, predict_power):
+    print('--export date')
+    with open(csv_name, 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['predict_date', 'predict_power_consumption'])
+        for date in range(31):
+            writer.writerow([20161001 + date, int(predict_power[date])])
+
+
+if __name__ == '__main__':
+    p = Powers("Tianchi_power_new.csv")
+    # p.classifyAll()
+
+    # for f in os.listdir("./images"):
+    #     print f
+    #     npdata = group_folder(f, p)
+    #     Utility.plot(npdata)
+
+    # array = []
+    # for f in os.listdir("./images"):
+    #     dat = group_folder(f, p)
+    #     array.append(dat)
+    # # np.savetxt("data.csv", np.array(array))
+    # np.loadtxt(open("data.csv"))
+
+
+    for f in os.listdir("./images"):
+        if f == 'is_year_similar':
+            traindata = group_folder(f, p)
+            pre = Predict(traindata[:-31], 1)
+            predata = pre.get_predict31()
+            plt.plot(range(len(traindata)),traindata,'k')
+            plt.plot(range(len(traindata[:-31]),len(traindata[:-31])+31), predata, 'b')
+            plt.show()
+            write_csv('Tianchi_power_predict_table.csv', predata)
+            break
