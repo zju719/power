@@ -282,6 +282,11 @@ if __name__ == '__main__':
     pre_total[1] = 2768150
     pre_total[2] = 2733020
     pre_total[3] = 2990660
+    pre_total += 200000
+    pre_total[29] -= 20000
+    pre_total[22] -= 20000
+    pre_total[15] -= 20000
+
 
     plt.plot(range(len(train_total)), train_total, 'k')
     plt.plot(range(len(train_total), len(train_total) + 31), pre_total, 'b')
